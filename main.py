@@ -183,7 +183,7 @@ for pdb_path in pdb_files:
     print(f"Rendering sequence for {pdb_name}: frames {scene.frame_start} to {scene.frame_end}...")
     halfway_frame = scene.frame_start + (scene.frame_end - scene.frame_start) // 2
     
-    for frame in range(scene.frame_start, scene.frame_end + 1):
+    for frame in tqdm(range(scene.frame_start, scene.frame_end + 1)):
         scene.frame_set(frame)
         
         for obj in bpy.data.objects:
