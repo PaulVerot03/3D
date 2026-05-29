@@ -2,12 +2,43 @@ import os
 import sys
 # pyrefly: ignore [missing-import]
 import bpy
+# pyrefly: ignore [missing-import]
 import addon_utils
+# pyrefly: ignore [missing-import]
 import numpy as np
+# pyrefly: ignore [missing-import]
 import mathutils
 import datetime
 import glob
 import subprocess
+
+def enable_gpu_if_available(scene):
+    if scene.render.engine == 'CYCLES':
+        try:
+            cycles_pref = bpy.context.preferences.addons['cycles'].preferences
+            cycles_pref.refresh_devices()
+            
+            gpu_types = ('OPTIX', 'CUDA', 'HIP', 'ONEAPI', 'METAL')
+            activated_type = None
+            
+            for gtype in gpu_types:
+                devices = cycles_pref.get_devices_for_type(gtype)
+                if devices:
+                    for dev in devices:
+                        dev.use = True
+                        print(f"Cycles: Enabled GPU device: {dev.name} ({gtype})")
+                    activated_type = gtype
+                    break
+            
+            if activated_type:
+                cycles_pref.compute_device_type = activated_type
+                scene.cycles.device = 'GPU'
+                print(f"Cycles: Successfully set rendering device to GPU ({activated_type})")
+            else:
+                scene.cycles.device = 'CPU'
+                print("Cycles: No compatible GPU devices found. Using CPU.")
+        except Exception as e:
+            print(f"Warning: Failed to configure Cycles GPU settings: {e}")
 
 # 0. Load the template blend file if one is not already open
 if not bpy.data.filepath and os.path.exists("rna2.blend"):
@@ -38,6 +69,7 @@ if not pdb_files:
     sys.exit(1)
 
 scene = bpy.context.scene
+enable_gpu_if_available(scene)
 
 # Get or create the CameraTarget Empty (we only need one in the scene)
 camera_obj = scene.camera
