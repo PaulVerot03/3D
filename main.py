@@ -253,8 +253,8 @@ for pdb_path in pdb_files:
                     
                     d_required = np.max(np.maximum(d_x, d_y))
                     
-                    # Prevent zooming in too close
-                    d_required = max(d_required, 5.0)
+                    # Prevent zooming in too close (ensuring type is float to prevent mathutils/numpy type clash)
+                    d_required = max(float(d_required), 5.0)
                     
                     # Update camera location
                     z_cam_vec = camera_obj.matrix_world.col[2].to_3d().normalized()
