@@ -10,6 +10,20 @@ import datetime
 import glob
 import subprocess
 
+try:
+    from tqdm import tqdm
+except ImportError:
+    # Graceful fallback if tqdm is not installed in the Blender Python environment
+    def tqdm(iterable, desc=None, **kwargs):
+        total = len(iterable) if hasattr(iterable, '__len__') else None
+        for i, item in enumerate(iterable):
+            if total is not None:
+                print(f"{desc or 'Progress'}: {i+1}/{total}", flush=True)
+            else:
+                print(f"{desc or 'Progress'}: {i+1}", flush=True)
+            yield item
+
+
 blender_file = "candy.blend"
 trajectory = "vis_20260519_153833_C1'.pdb"
 select_all_pdbs = False  # Set to True to scan directories and process all PDBs. Set to False to process only the 'trajectory' file.
@@ -155,7 +169,7 @@ for pdb_path in pdb_files:
     
     print(f"Rendering sequence for {pdb_name}: frames {scene.frame_start} to {scene.frame_end}...")
     
-    for frame in range(scene.frame_start, scene.frame_end + 1):
+    for frame in tqdm(range(scene.frame_start, scene.frame_end + 1), desc=f"Rendering {pdb_name}"):
         scene.frame_set(frame)
         
         # Force evaluate modifier evaluations on the object
