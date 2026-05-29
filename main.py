@@ -12,6 +12,34 @@ import datetime
 import glob
 import subprocess
 
+try:
+    from tqdm import tqdm
+except ImportError:
+    def tqdm(iterable, desc=None, **kwargs):
+        total = len(iterable) if hasattr(iterable, '__len__') else None
+        for i, item in enumerate(iterable):
+            if total is not None:
+                print(f"{desc or 'Progress'}: {i+1}/{total}", flush=True)
+            else:
+                print(f"{desc or 'Progress'}: {i+1}", flush=True)
+            yield item
+
+blender_file = None
+default_file = "rna2.blend"
+print(f"\nDefault blender file is '{default_file}.")
+user_choice = input("Do you want to manually specify the file (y/N): ").strip().lower()
+if user_choice in ('y', 'yes'):
+    try:
+        custom_file = input(f"Enter file name [default: {default_file}]: ").strip()
+        if custom_file:
+            blender_file = custom_file
+        print(f"Using manually specified file: {blender_file}.")
+    except ValueError:
+        print("Invalid input. Proceeding with default file.")
+else:
+    blender_file = default_file
+    print(f"Using default file: {blender_file}.")
+
 def enable_gpu_if_available(scene):
     if scene.render.engine == 'CYCLES':
         try:
@@ -40,19 +68,15 @@ def enable_gpu_if_available(scene):
         except Exception as e:
             print(f"Warning: Failed to configure Cycles GPU settings: {e}")
 
-# 0. Load the template blend file if one is not already open
-if not bpy.data.filepath and os.path.exists("rna2.blend"):
-    print("Loading rna2.blend template...")
-    bpy.ops.wm.open_mainfile(filepath="rna2.blend")
+if not bpy.data.filepath and os.path.exists(blender_file):
+    print("Loading " + blender_file + " template...")
+    bpy.ops.wm.open_mainfile(filepath=blender_file)
 
-# 1. Enable Molecular Nodes addon/extension
 addon_utils.enable('bl_ext.user_default.molecularnodes')
 
-# 2. Get the directory containing combined PDBs
 script_dir = os.path.dirname(os.path.abspath(__file__))
 combined_dir = os.path.join(script_dir, "trajectories")
 
-# Parse command line arguments if passed after '--'
 if "--" in sys.argv:
     args = sys.argv[sys.argv.index('--') + 1:]
     if args:
@@ -71,7 +95,6 @@ if not pdb_files:
 scene = bpy.context.scene
 enable_gpu_if_available(scene)
 
-# Get or create the CameraTarget Empty (we only need one in the scene)
 camera_obj = scene.camera
 target_obj = None
 if camera_obj:
@@ -82,7 +105,6 @@ if camera_obj:
         target_obj = bpy.data.objects.new(target_name, None)
         scene.collection.objects.link(target_obj)
     
-    # Check if a Track To constraint already exists
     track_constraint = None
     for constraint in camera_obj.constraints:
         if constraint.type == 'TRACK_TO' and constraint.target == target_obj:
@@ -98,19 +120,15 @@ if camera_obj:
 else:
     print("Warning: No active camera found in the scene to apply tracking.")
 
-# Create the main render runs folder
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 runs_parent_dir = os.path.join(script_dir, "render_runs", f"run_{timestamp}")
 os.makedirs(runs_parent_dir, exist_ok=True)
-
-# Loop through all PDB files
 for pdb_path in pdb_files:
-    pdb_name = os.path.splitext(os.path.basename(pdb_path))[0]
+    pdb_name = os.path.splitext(os.path.basename(pdb_path))[0].replace("'", "")
     print(f"\n=========================================")
     print(f"Processing trajectory: {pdb_name}")
     print(f"=========================================")
     
-    # Clean up previous "renders" object and mesh to avoid accumulation
     if "renders" in bpy.data.objects:
         obj_to_del = bpy.data.objects["renders"]
         mesh_to_del = obj_to_del.data
@@ -118,12 +136,10 @@ for pdb_path in pdb_files:
         if mesh_to_del:
             bpy.data.meshes.remove(mesh_to_del, do_unlink=True)
             
-    # Set Molecular Nodes UI paths (for compatibility)
     scene.mn.import_md_name = "renders"
     scene.mn.import_md_topology = pdb_path
     scene.mn.import_md_trajectory = pdb_path
     
-    # Import the trajectory
     print(f"Importing PDB trajectory...")
     bpy.ops.mn.import_trajectory(
         topology=pdb_path,
@@ -133,7 +149,6 @@ for pdb_path in pdb_files:
     
     imported_obj = bpy.context.active_object
     
-    # Apply custom node tree
     if imported_obj and imported_obj.type == 'MESH':
         MY_CUSTOM_TREE = "CustomProt"
         if MY_CUSTOM_TREE in bpy.data.node_groups:
@@ -145,14 +160,11 @@ for pdb_path in pdb_files:
         else:
             print(f"Warning: Node group '{MY_CUSTOM_TREE}' not found in the blend file.")
             
-    # Set up rendering directory for this specific trajectory
-    output_dir = os.path.join(runs_parent_dir, pdb_name)
+    output_dir = os.path.join(runs_parent_dir, f"run_{timestamp}_{blender_file}", pdb_name)
     os.makedirs(output_dir, exist_ok=True)
     
     scene.frame_start = 1
-    # scene.frame_end is automatically set by the Molecular Nodes import operator
     
-    # Prompt the user to manually adjust the frame range
     default_total = scene.frame_end - scene.frame_start + 1
     print(f"\nTrajectory '{pdb_name}' is scheduled to generate {default_total} frames (from {scene.frame_start} to {scene.frame_end}).")
     user_choice = input("Do you want to manually specify the frame range? (y/N): ").strip().lower()
@@ -174,19 +186,14 @@ for pdb_path in pdb_files:
     for frame in range(scene.frame_start, scene.frame_end + 1):
         scene.frame_set(frame)
         
-        # No manual lens switching; lens is fixed at 36.0 as set initially.
-        
-        # Force evaluate modifier evaluations on the object
         for obj in bpy.data.objects:
             if obj.type == 'MESH' and obj.modifiers:
                 obj.data.update()
                 
         bpy.context.view_layer.update()
         
-        # Update target empty position to track the molecule center and fit camera to frame
         if camera_obj and target_obj and imported_obj:
             try:
-                # Get evaluated mesh (after modifiers/geometry nodes are applied)
                 dg = bpy.context.evaluated_depsgraph_get()
                 eval_obj = imported_obj.evaluated_get(dg)
                 eval_mesh = eval_obj.to_mesh()
@@ -197,16 +204,13 @@ for pdb_path in pdb_files:
                     eval_mesh.vertices.foreach_get('co', coords)
                     coords = coords.reshape((-1, 3))
                     
-                    # Convert local coordinates to world space
                     R_world = np.array(imported_obj.matrix_world.to_3x3())
                     T_world = np.array(imported_obj.matrix_world.translation)
                     coords_world = coords @ R_world.T + T_world
                     
-                    # Update target empty location to the center of the molecule
                     world_center = coords_world.mean(axis=0)
                     target_obj.location = mathutils.Vector(world_center)
                     
-                    # Calculate camera sensor properties for framing
                     render = scene.render
                     aspect_ratio = (render.resolution_x * render.pixel_aspect_x) / (render.resolution_y * render.pixel_aspect_y)
                     
@@ -230,12 +234,9 @@ for pdb_path in pdb_files:
                         w = sensor_width
                         h = sensor_height
                     
-                    # Add a safety margin (15% padding)
                     margin = 1.15
                     w_eff = w / margin
                     h_eff = h / margin
-                    
-                    # Project vertices relative to target center onto camera local axes
                     diff = coords_world - world_center
                     
                     x_cam = np.array(camera_obj.matrix_world.col[0].to_3d())
@@ -246,17 +247,14 @@ for pdb_path in pdb_files:
                     y_local = diff @ y_cam
                     z_local = diff @ z_cam
                     
-                    # Calculate required distance along camera axis (Z axis)
                     f = camera_obj.data.lens
                     d_x = z_local + (2.0 * f / w_eff) * np.abs(x_local)
                     d_y = z_local + (2.0 * f / h_eff) * np.abs(y_local)
                     
                     d_required = np.max(np.maximum(d_x, d_y))
                     
-                    # Prevent zooming in too close (ensuring type is float to prevent mathutils/numpy type clash)
                     d_required = max(float(d_required), 5.0)
                     
-                    # Update camera location
                     z_cam_vec = camera_obj.matrix_world.col[2].to_3d().normalized()
                     camera_obj.location = target_obj.location + d_required * z_cam_vec
                 
@@ -268,13 +266,11 @@ for pdb_path in pdb_files:
         dg = bpy.context.evaluated_depsgraph_get()
         dg.update()
         
-        # Save frame image
         scene.render.filepath = os.path.join(output_dir, f"frame_{frame:04d}.png")
         bpy.ops.render.render(write_still=True)
         
     print(f"Trajectory {pdb_name} rendering complete!")
     
-    # Compile the rendered PNG sequence into an MP4 video using ffmpeg
     video_output_path = os.path.join(output_dir, f"{pdb_name}.mp4")
     ffmpeg_cmd = [
         "ffmpeg",

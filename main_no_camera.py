@@ -103,13 +103,13 @@ enable_gpu_if_available(scene)
 
 # Create the main render runs folder
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-runs_parent_dir = os.path.join(script_dir, "render_runs", f"run_{timestamp}")
+runs_parent_dir = os.path.join(script_dir, "render_runs", f"run_{timestamp}_{blender_file}")
 os.makedirs(runs_parent_dir, exist_ok=True)
 
 # Loop through all PDB files
 for pdb_path in pdb_files:
     if pdb_path is not None:
-        pdb_name = os.path.splitext(os.path.basename(pdb_path))[0]
+        pdb_name = os.path.splitext(os.path.basename(pdb_path))[0].replace("'", "")
         print(f"\n=========================================")
         print(f"Processing trajectory: {pdb_name}")
         print(f"=========================================")
@@ -152,7 +152,7 @@ for pdb_path in pdb_files:
         # Default name when rendering the loaded template file directly
         blend_filepath = bpy.data.filepath
         if blend_filepath:
-            pdb_name = os.path.splitext(os.path.basename(blend_filepath))[0]
+            pdb_name = os.path.splitext(os.path.basename(blend_filepath))[0].replace("'", "")
         else:
             pdb_name = "default_render"
         print(f"\n=========================================")
