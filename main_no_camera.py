@@ -56,13 +56,13 @@ def enable_gpu_if_available(scene):
         except Exception as e:
             print(f"Warning: Failed to configure Cycles GPU settings: {e}")
 
-# 0. Load the template blend file if one is not already open
+# 0. Enable Molecular Nodes addon/extension
+addon_utils.enable('bl_ext.user_default.molecularnodes')
+
+# 1. Load the template blend file if one is not already open
 if not bpy.data.filepath and os.path.exists(blender_file):
     print("Loading template blend file...")
     bpy.ops.wm.open_mainfile(filepath=blender_file)
-
-# 1. Enable Molecular Nodes addon/extension
-addon_utils.enable('bl_ext.user_default.molecularnodes')
 
 # 2. Get the directory containing combined PDBs
 script_dir = os.path.dirname(os.path.abspath(__file__))

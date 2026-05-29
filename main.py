@@ -68,11 +68,11 @@ def enable_gpu_if_available(scene):
         except Exception as e:
             print(f"Warning: Failed to configure Cycles GPU settings: {e}")
 
+addon_utils.enable('bl_ext.user_default.molecularnodes')
+
 if not bpy.data.filepath and os.path.exists(blender_file):
     print("Loading " + blender_file + " template...")
     bpy.ops.wm.open_mainfile(filepath=blender_file)
-
-addon_utils.enable('bl_ext.user_default.molecularnodes')
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 combined_dir = os.path.join(script_dir, "trajectories")
@@ -121,7 +121,7 @@ else:
     print("Warning: No active camera found in the scene to apply tracking.")
 
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-runs_parent_dir = os.path.join(script_dir, "render_runs", f"run_{timestamp}")
+runs_parent_dir = os.path.join(script_dir, "render_runs", f"run_{timestamp}_{blender_file}")
 os.makedirs(runs_parent_dir, exist_ok=True)
 for pdb_path in pdb_files:
     pdb_name = os.path.splitext(os.path.basename(pdb_path))[0].replace("'", "")
@@ -160,7 +160,7 @@ for pdb_path in pdb_files:
         else:
             print(f"Warning: Node group '{MY_CUSTOM_TREE}' not found in the blend file.")
             
-    output_dir = os.path.join(runs_parent_dir, f"run_{timestamp}_{blender_file}", pdb_name)
+    output_dir = os.path.join(runs_parent_dir, pdb_name)
     os.makedirs(output_dir, exist_ok=True)
     
     scene.frame_start = 1
