@@ -50,7 +50,7 @@ addon_utils.enable('bl_ext.user_default.molecularnodes')
 
 # 2. Get the directory containing combined PDBs
 script_dir = os.path.dirname(os.path.abspath(__file__))
-combined_dir = os.path.join(script_dir, "combined_trajectories")
+combined_dir = os.path.join(script_dir, "trajectories")
 
 # Parse command line arguments if passed after '--'
 if "--" in sys.argv:
