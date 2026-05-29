@@ -158,8 +158,7 @@ for pdb_path in pdb_files:
     for frame in range(scene.frame_start, scene.frame_end + 1):
         scene.frame_set(frame)
         
-        if camera_obj:
-            camera_obj.data.lens = 36.0 if frame < halfway_frame else 8.0
+        # No manual lens switching; lens is fixed at 36.0 as set initially.
         
         # Force evaluate modifier evaluations on the object
         for obj in bpy.data.objects:
@@ -168,14 +167,86 @@ for pdb_path in pdb_files:
                 
         bpy.context.view_layer.update()
         
-        # Update target empty position to track the molecule center
-        if target_obj and imported_obj and len(imported_obj.data.vertices) > 0:
-            coords = np.empty(len(imported_obj.data.vertices) * 3, dtype=np.float32)
-            imported_obj.data.vertices.foreach_get('co', coords)
-            coords = coords.reshape((-1, 3))
-            center = coords.mean(axis=0)
-            world_center = imported_obj.matrix_world @ mathutils.Vector(center)
-            target_obj.location = world_center
+        # Update target empty position to track the molecule center and fit camera to frame
+        if camera_obj and target_obj and imported_obj:
+            try:
+                # Get evaluated mesh (after modifiers/geometry nodes are applied)
+                dg = bpy.context.evaluated_depsgraph_get()
+                eval_obj = imported_obj.evaluated_get(dg)
+                eval_mesh = eval_obj.to_mesh()
+                
+                num_verts = len(eval_mesh.vertices)
+                if num_verts > 0:
+                    coords = np.empty(num_verts * 3, dtype=np.float32)
+                    eval_mesh.vertices.foreach_get('co', coords)
+                    coords = coords.reshape((-1, 3))
+                    
+                    # Convert local coordinates to world space
+                    R_world = np.array(imported_obj.matrix_world.to_3x3())
+                    T_world = np.array(imported_obj.matrix_world.translation)
+                    coords_world = coords @ R_world.T + T_world
+                    
+                    # Update target empty location to the center of the molecule
+                    world_center = coords_world.mean(axis=0)
+                    target_obj.location = mathutils.Vector(world_center)
+                    
+                    # Calculate camera sensor properties for framing
+                    render = scene.render
+                    aspect_ratio = (render.resolution_x * render.pixel_aspect_x) / (render.resolution_y * render.pixel_aspect_y)
+                    
+                    sensor_width = camera_obj.data.sensor_width
+                    sensor_height = camera_obj.data.sensor_height
+                    
+                    if camera_obj.data.sensor_fit == 'AUTO':
+                        if aspect_ratio >= 1.0:
+                            w = sensor_width
+                            h = sensor_width / aspect_ratio
+                        else:
+                            h = sensor_width
+                            w = sensor_width * aspect_ratio
+                    elif camera_obj.data.sensor_fit == 'HORIZONTAL':
+                        w = sensor_width
+                        h = sensor_width / aspect_ratio
+                    elif camera_obj.data.sensor_fit == 'VERTICAL':
+                        h = sensor_height
+                        w = sensor_height * aspect_ratio
+                    else:
+                        w = sensor_width
+                        h = sensor_height
+                    
+                    # Add a safety margin (15% padding)
+                    margin = 1.15
+                    w_eff = w / margin
+                    h_eff = h / margin
+                    
+                    # Project vertices relative to target center onto camera local axes
+                    diff = coords_world - world_center
+                    
+                    x_cam = np.array(camera_obj.matrix_world.col[0].to_3d())
+                    y_cam = np.array(camera_obj.matrix_world.col[1].to_3d())
+                    z_cam = np.array(camera_obj.matrix_world.col[2].to_3d())
+                    
+                    x_local = diff @ x_cam
+                    y_local = diff @ y_cam
+                    z_local = diff @ z_cam
+                    
+                    # Calculate required distance along camera axis (Z axis)
+                    f = camera_obj.data.lens
+                    d_x = z_local + (2.0 * f / w_eff) * np.abs(x_local)
+                    d_y = z_local + (2.0 * f / h_eff) * np.abs(y_local)
+                    
+                    d_required = np.max(np.maximum(d_x, d_y))
+                    
+                    # Prevent zooming in too close
+                    d_required = max(d_required, 5.0)
+                    
+                    # Update camera location
+                    z_cam_vec = camera_obj.matrix_world.col[2].to_3d().normalized()
+                    camera_obj.location = target_obj.location + d_required * z_cam_vec
+                
+                eval_obj.to_mesh_clear()
+            except Exception as e:
+                print(f"Warning: Failed to auto-frame camera: {e}")
             
         bpy.context.view_layer.update()
         dg = bpy.context.evaluated_depsgraph_get()
