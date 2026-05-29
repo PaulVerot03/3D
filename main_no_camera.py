@@ -167,6 +167,22 @@ for pdb_path in pdb_files:
         scene.frame_start = 1
         # scene.frame_end is automatically set by the Molecular Nodes import operator
     
+    # Prompt the user to manually adjust the frame range
+    default_total = scene.frame_end - scene.frame_start + 1
+    print(f"\nTrajectory '{pdb_name}' is scheduled to generate {default_total} frames (from {scene.frame_start} to {scene.frame_end}).")
+    user_choice = input("Do you want to manually specify the frame range? (y/N): ").strip().lower()
+    if user_choice in ('y', 'yes'):
+        try:
+            custom_start = input(f"Enter start frame [default: {scene.frame_start}]: ").strip()
+            if custom_start:
+                scene.frame_start = int(custom_start)
+            custom_end = input(f"Enter end frame [default: {scene.frame_end}]: ").strip()
+            if custom_end:
+                scene.frame_end = int(custom_end)
+            print(f"Using manually specified frame range: {scene.frame_start} to {scene.frame_end} ({scene.frame_end - scene.frame_start + 1} frames).")
+        except ValueError:
+            print("Invalid input. Proceeding with default frame range.")
+            
     print(f"Rendering sequence for {pdb_name}: frames {scene.frame_start} to {scene.frame_end}...")
     
     for frame in tqdm(range(scene.frame_start, scene.frame_end + 1), desc=f"Rendering {pdb_name}"):
