@@ -24,21 +24,23 @@ except ImportError:
                 print(f"{desc or 'Progress'}: {i+1}", flush=True)
             yield item
 
-blender_file = None
-default_file = "rna2.blend"
-print(f"\nDefault blender file is '{default_file}.")
-user_choice = input("Do you want to manually specify the file (y/N): ").strip().lower()
-if user_choice in ('y', 'yes'):
-    try:
-        custom_file = input(f"Enter file name [default: {default_file}]: ").strip()
-        if custom_file:
-            blender_file = custom_file
-        print(f"Using manually specified file: {blender_file}.")
-    except ValueError:
-        print("Invalid input. Proceeding with default file.")
+import argparse
+
+# Extract arguments after '--' if present
+if "--" in sys.argv:
+    args_list = sys.argv[sys.argv.index('--') + 1:]
 else:
-    blender_file = default_file
-    print(f"Using default file: {blender_file}.")
+    args_list = []
+
+parser = argparse.ArgumentParser(description="Render PDB trajectories in Blender.")
+parser.add_argument('--blend', '-b', type=str, default='rna2.blend', help='Blender template file to load')
+parser.add_argument('--trajectories', '-t', type=str, default='trajectories', help='Directory containing PDB files')
+parser.add_argument('--start', '-s', type=int, default=None, help='Start frame for rendering')
+parser.add_argument('--end', '-e', type=int, default=None, help='End frame for rendering')
+
+parsed_args = parser.parse_args(args_list)
+blender_file = parsed_args.blend
+
 
 def enable_gpu_if_available(scene):
     if scene.render.engine == 'CYCLES':
@@ -75,12 +77,10 @@ if not bpy.data.filepath and os.path.exists(blender_file):
     bpy.ops.wm.open_mainfile(filepath=blender_file)
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
-combined_dir = os.path.join(script_dir, "trajectories")
-
-if "--" in sys.argv:
-    args = sys.argv[sys.argv.index('--') + 1:]
-    if args:
-        combined_dir = os.path.abspath(args[0])
+if os.path.isabs(parsed_args.trajectories):
+    combined_dir = parsed_args.trajectories
+else:
+    combined_dir = os.path.join(script_dir, parsed_args.trajectories)
 
 print(f"Looking for PDB trajectories in: {combined_dir}")
 pdb_files = [
@@ -165,22 +165,16 @@ for pdb_path in pdb_files:
     
     scene.frame_start = 1
     
-    default_total = scene.frame_end - scene.frame_start + 1
-    print(f"\nTrajectory '{pdb_name}' is scheduled to generate {default_total} frames (from {scene.frame_start} to {scene.frame_end}).")
-    user_choice = input("Do you want to manually specify the frame range? (y/N): ").strip().lower()
-    if user_choice in ('y', 'yes'):
-        try:
-            custom_start = input(f"Enter start frame [default: {scene.frame_start}]: ").strip()
-            if custom_start:
-                scene.frame_start = int(custom_start)
-            custom_end = input(f"Enter end frame [default: {scene.frame_end}]: ").strip()
-            if custom_end:
-                scene.frame_end = int(custom_end)
-            print(f"Using manually specified frame range: {scene.frame_start} to {scene.frame_end} ({scene.frame_end - scene.frame_start + 1} frames).")
-        except ValueError:
-            print("Invalid input. Proceeding with default frame range.")
-            
-    print(f"Rendering sequence for {pdb_name}: frames {scene.frame_start} to {scene.frame_end}...")
+    if parsed_args.start is not None:
+        scene.frame_start = parsed_args.start
+    else:
+        scene.frame_start = 1
+        
+    if parsed_args.end is not None:
+        scene.frame_end = parsed_args.end
+        
+    total_frames = scene.frame_end - scene.frame_start + 1
+    print(f"Rendering sequence for {pdb_name}: frames {scene.frame_start} to {scene.frame_end} ({total_frames} frames)...")
     halfway_frame = scene.frame_start + (scene.frame_end - scene.frame_start) // 2
     
     for frame in tqdm(range(scene.frame_start, scene.frame_end + 1)):

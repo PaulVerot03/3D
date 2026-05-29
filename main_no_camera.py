@@ -24,9 +24,26 @@ except ImportError:
             yield item
 
 
-blender_file = "candy.blend"
-trajectory = "vis_20260519_153833_C1'.pdb"
-select_all_pdbs = False  # Set to True to scan directories and process all PDBs. Set to False to process only the 'trajectory' file.
+import argparse
+
+# Extract arguments after '--' if present
+if "--" in sys.argv:
+    args_list = sys.argv[sys.argv.index('--') + 1:]
+else:
+    args_list = []
+
+parser = argparse.ArgumentParser(description="Render PDB trajectories in Blender.")
+parser.add_argument('--blend', '-b', type=str, default='candy.blend', help='Blender template file to load')
+parser.add_argument('--trajectory', '-j', type=str, default="vis_20260519_153833_C1'.pdb", help='Specific PDB trajectory file to load when --all is not set')
+parser.add_argument('--all', '-a', action='store_true', help='Scan directories and process all PDB files')
+parser.add_argument('--trajectories', '-t', type=str, default='trajectories', help='Directory containing PDB files')
+parser.add_argument('--start', '-s', type=int, default=None, help='Start frame for rendering')
+parser.add_argument('--end', '-e', type=int, default=None, help='End frame for rendering')
+
+parsed_args = parser.parse_args(args_list)
+blender_file = parsed_args.blend
+trajectory = parsed_args.trajectory
+select_all_pdbs = parsed_args.all
 
 def enable_gpu_if_available(scene):
     if scene.render.engine == 'CYCLES':
@@ -66,13 +83,10 @@ if not bpy.data.filepath and os.path.exists(blender_file):
 
 # 2. Get the directory containing combined PDBs
 script_dir = os.path.dirname(os.path.abspath(__file__))
-combined_dir = os.path.join(script_dir, "trajectories")
-
-# Parse command line arguments if passed after '--'
-if "--" in sys.argv:
-    args = sys.argv[sys.argv.index('--') + 1:]
-    if args:
-        combined_dir = os.path.abspath(args[0])
+if os.path.isabs(parsed_args.trajectories):
+    combined_dir = parsed_args.trajectories
+else:
+    combined_dir = os.path.join(script_dir, parsed_args.trajectories)
 
 if select_all_pdbs:
     print(f"Looking for PDB trajectories in: {combined_dir}")
@@ -163,27 +177,16 @@ for pdb_path in pdb_files:
     output_dir = os.path.join(runs_parent_dir, pdb_name)
     os.makedirs(output_dir, exist_ok=True)
     
-    if pdb_path is not None:
+    if parsed_args.start is not None:
+        scene.frame_start = parsed_args.start
+    elif pdb_path is not None:
         scene.frame_start = 1
-        # scene.frame_end is automatically set by the Molecular Nodes import operator
-    
-    # Prompt the user to manually adjust the frame range
-    default_total = scene.frame_end - scene.frame_start + 1
-    print(f"\nTrajectory '{pdb_name}' is scheduled to generate {default_total} frames (from {scene.frame_start} to {scene.frame_end}).")
-    user_choice = input("Do you want to manually specify the frame range? (y/N): ").strip().lower()
-    if user_choice in ('y', 'yes'):
-        try:
-            custom_start = input(f"Enter start frame [default: {scene.frame_start}]: ").strip()
-            if custom_start:
-                scene.frame_start = int(custom_start)
-            custom_end = input(f"Enter end frame [default: {scene.frame_end}]: ").strip()
-            if custom_end:
-                scene.frame_end = int(custom_end)
-            print(f"Using manually specified frame range: {scene.frame_start} to {scene.frame_end} ({scene.frame_end - scene.frame_start + 1} frames).")
-        except ValueError:
-            print("Invalid input. Proceeding with default frame range.")
-            
-    print(f"Rendering sequence for {pdb_name}: frames {scene.frame_start} to {scene.frame_end}...")
+        
+    if parsed_args.end is not None:
+        scene.frame_end = parsed_args.end
+        
+    total_frames = scene.frame_end - scene.frame_start + 1
+    print(f"Rendering sequence for {pdb_name}: frames {scene.frame_start} to {scene.frame_end} ({total_frames} frames)...")
     
     for frame in tqdm(range(scene.frame_start, scene.frame_end + 1), desc=f"Rendering {pdb_name}"):
         scene.frame_set(frame)
